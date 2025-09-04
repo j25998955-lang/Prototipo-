@@ -64,7 +64,6 @@
             padding: 1.5rem;
             border-radius: 1rem;
             box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
-            cursor: pointer;
             transition: transform 0.2s;
         }
         .question-item:hover {
@@ -133,9 +132,9 @@
 
 <script type="module">
     // Importa las funciones necesarias del SDK de Firebase
-    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-    import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, setDoc } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-app.js";
+    import { getFirestore, collection, addDoc, onSnapshot, query, where, doc, setDoc } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js";
+    import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.2.1/firebase-auth.js";
 
     // Tu configuración de Firebase
     const firebaseConfig = {
@@ -155,26 +154,6 @@
 
     let userId = null;
 
-    // Inicia sesión anónimamente para obtener un ID de usuario
-    signInAnonymously(auth).then((userCredential) => {
-        userId = userCredential.user.uid;
-        console.log("Sesión iniciada con ID de usuario:", userId);
-        
-        // Muestra el ID de usuario en la interfaz para compartirlo
-        const container = document.querySelector('.container');
-        const userIdDisplay = document.createElement('div');
-        userIdDisplay.className = "text-sm text-center text-gray-500 rounded-lg p-2 bg-gray-100 mb-4 word-wrap: break-word;";
-        userIdDisplay.textContent = `Tu ID de Usuario: ${userId}`;
-        container.prepend(userIdDisplay);
-
-    }).catch((error) => {
-        console.error("Error al iniciar sesión anónima:", error);
-        console.error("Código de error:", error.code);
-        const statusMessage = document.getElementById('status-message');
-        statusMessage.textContent = "Error: El inicio de sesión anónimo no está habilitado. Por favor, ve a la consola de Firebase > Authentication > Sign-in method y actívalo.";
-        statusMessage.className = "text-center text-red-500 rounded-lg p-2 bg-red-100";
-    });
-
     // Referencias a los elementos HTML
     const questionForm = document.getElementById('question-form');
     const questionTitleInput = document.getElementById('question-title');
@@ -182,6 +161,28 @@
     const questionsContainer = document.getElementById('questions-container');
     const loadingMessage = document.getElementById('loading-message');
     const statusMessage = document.getElementById('status-message');
+    const userIdDisplay = document.createElement('div');
+    userIdDisplay.className = "text-sm text-center text-gray-500 rounded-lg p-2 bg-gray-100 mb-4 word-wrap: break-word;";
+
+    // Inicia sesión anónimamente para obtener un ID de usuario
+    signInAnonymously(auth).then((userCredential) => {
+        userId = userCredential.user.uid;
+        console.log("Sesión iniciada con ID de usuario:", userId);
+        
+        // Muestra el ID de usuario en la interfaz para compartirlo
+        const container = document.querySelector('.container');
+        userIdDisplay.textContent = `Tu ID de Usuario: ${userId}`;
+        container.prepend(userIdDisplay);
+
+        // Comienza a escuchar los datos solo después de que el usuario se ha autenticado
+        listenForQuestions();
+
+    }).catch((error) => {
+        console.error("Error al iniciar sesión anónima:", error);
+        console.error("Código de error:", error.code);
+        statusMessage.textContent = "Error: El inicio de sesión anónimo no está habilitado. Por favor, ve a la consola de Firebase > Authentication > Sign-in method y actívalo.";
+        statusMessage.className = "text-center text-red-500 rounded-lg p-2 bg-red-100";
+    });
 
     // Escucha el evento de envío del formulario de preguntas
     questionForm.addEventListener('submit', async (e) => {
@@ -193,6 +194,13 @@
 
         if (title.trim() === "" || body.trim() === "") {
             statusMessage.textContent = "Por favor, completa ambos campos.";
+            statusMessage.className = "text-center text-red-500";
+            return;
+        }
+
+        // Verifica si el usuario está autenticado antes de intentar guardar
+        if (!userId) {
+            statusMessage.textContent = "Error: La aplicación no está conectada. Espera unos segundos e inténtalo de nuevo. Si el problema persiste, revisa la autenticación anónima.";
             statusMessage.className = "text-center text-red-500";
             return;
         }
@@ -216,94 +224,96 @@
         }
     });
 
-    // Escucha cambios en tiempo real en la colección 'preguntas'
-    const qQuestions = query(collection(db, "preguntas"));
-    onSnapshot(qQuestions, (querySnapshot) => {
-        questionsContainer.innerHTML = `<h2 class="text-xl font-semibold">Preguntas de la comunidad</h2>`;
-        loadingMessage.style.display = 'none';
+    // Función para escuchar cambios en tiempo real en la base de datos
+    function listenForQuestions() {
+        const qQuestions = query(collection(db, "preguntas"));
+        onSnapshot(qQuestions, (querySnapshot) => {
+            questionsContainer.innerHTML = `<h2 class="text-xl font-semibold">Preguntas de la comunidad</h2>`;
+            loadingMessage.style.display = 'none';
 
-        if (querySnapshot.empty) {
-            const noQuestionsMessage = document.createElement('p');
-            noQuestionsMessage.textContent = "No hay preguntas todavía. ¡Sé el primero en hacer una!";
-            noQuestionsMessage.className = "text-center text-gray-500";
-            questionsContainer.appendChild(noQuestionsMessage);
-        } else {
-            querySnapshot.forEach((doc) => {
-                const data = doc.data();
-                
-                // Crea un nuevo elemento para mostrar la pregunta
-                const questionItem = document.createElement('div');
-                questionItem.className = 'question-item';
-                
-                const questionTitle = document.createElement('h3');
-                questionTitle.className = 'question-title';
-                questionTitle.textContent = data.titulo;
-                
-                const questionBody = document.createElement('p');
-                questionBody.className = 'question-body';
-                questionBody.textContent = data.cuerpo;
+            if (querySnapshot.empty) {
+                const noQuestionsMessage = document.createElement('p');
+                noQuestionsMessage.textContent = "No hay preguntas todavía. ¡Sé el primero en hacer una!";
+                noQuestionsMessage.className = "text-center text-gray-500";
+                questionsContainer.appendChild(noQuestionsMessage);
+            } else {
+                querySnapshot.forEach((doc) => {
+                    const data = doc.data();
+                    
+                    // Crea un nuevo elemento para mostrar la pregunta
+                    const questionItem = document.createElement('div');
+                    questionItem.className = 'question-item';
+                    
+                    const questionTitle = document.createElement('h3');
+                    questionTitle.className = 'question-title';
+                    questionTitle.textContent = data.titulo;
+                    
+                    const questionBody = document.createElement('p');
+                    questionBody.className = 'question-body';
+                    questionBody.textContent = data.cuerpo;
 
-                questionItem.appendChild(questionTitle);
-                questionItem.appendChild(questionBody);
-                
-                // Contenedor para las respuestas
-                const answersContainer = document.createElement('div');
-                answersContainer.className = 'answers-container';
-                questionItem.appendChild(answersContainer);
+                    questionItem.appendChild(questionTitle);
+                    questionItem.appendChild(questionBody);
+                    
+                    // Contenedor para las respuestas
+                    const answersContainer = document.createElement('div');
+                    answersContainer.className = 'answers-container';
+                    questionItem.appendChild(answersContainer);
 
-                // Formulario para responder
-                const answerForm = document.createElement('form');
-                answerForm.className = 'answer-form-container';
-                
-                const answerTextarea = document.createElement('textarea');
-                answerTextarea.placeholder = "Escribe tu respuesta...";
-                answerTextarea.rows = 1;
-                
-                const answerButton = document.createElement('button');
-                answerButton.type = 'submit';
-                answerButton.textContent = 'Responder';
-                answerButton.className = "bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors";
+                    // Formulario para responder
+                    const answerForm = document.createElement('form');
+                    answerForm.className = 'answer-form-container';
+                    
+                    const answerTextarea = document.createElement('textarea');
+                    answerTextarea.placeholder = "Escribe tu respuesta...";
+                    answerTextarea.rows = 1;
+                    
+                    const answerButton = document.createElement('button');
+                    answerButton.type = 'submit';
+                    answerButton.textContent = 'Responder';
+                    answerButton.className = "bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded-lg transition-colors";
 
-                answerForm.appendChild(answerTextarea);
-                answerForm.appendChild(answerButton);
-                questionItem.appendChild(answerForm);
+                    answerForm.appendChild(answerTextarea);
+                    answerForm.appendChild(answerButton);
+                    questionItem.appendChild(answerForm);
 
-                // Maneja el envío del formulario de respuestas
-                answerForm.addEventListener('submit', async (e) => {
-                    e.preventDefault();
-                    const answerBody = answerTextarea.value;
-                    if (answerBody.trim() === "") return;
+                    // Maneja el envío del formulario de respuestas
+                    answerForm.addEventListener('submit', async (e) => {
+                        e.preventDefault();
+                        const answerBody = answerTextarea.value;
+                        if (answerBody.trim() === "") return;
 
-                    try {
-                        await addDoc(collection(db, "respuestas"), {
-                            preguntaId: doc.id,
-                            cuerpo: answerBody,
-                            autorId: userId,
-                            fecha: new Date()
-                        });
-                        answerTextarea.value = '';
-                    } catch (error) {
-                        console.error("Error al agregar respuesta: ", error);
-                    }
-                });
-
-                // Escucha cambios en tiempo real en las respuestas para esta pregunta
-                const qAnswers = query(collection(db, "respuestas"), where("preguntaId", "==", doc.id));
-                onSnapshot(qAnswers, (answersSnapshot) => {
-                    answersContainer.innerHTML = '';
-                    answersSnapshot.forEach((answerDoc) => {
-                        const answerData = answerDoc.data();
-                        const answerItem = document.createElement('div');
-                        answerItem.className = 'answer-item';
-                        answerItem.textContent = answerData.cuerpo;
-                        answersContainer.appendChild(answerItem);
+                        try {
+                            await addDoc(collection(db, "respuestas"), {
+                                preguntaId: doc.id,
+                                cuerpo: answerBody,
+                                autorId: userId,
+                                fecha: new Date()
+                            });
+                            answerTextarea.value = '';
+                        } catch (error) {
+                            console.error("Error al agregar respuesta: ", error);
+                        }
                     });
+
+                    // Escucha cambios en tiempo real en las respuestas para esta pregunta
+                    const qAnswers = query(collection(db, "respuestas"), where("preguntaId", "==", doc.id));
+                    onSnapshot(qAnswers, (answersSnapshot) => {
+                        answersContainer.innerHTML = '';
+                        answersSnapshot.forEach((answerDoc) => {
+                            const answerData = answerDoc.data();
+                            const answerItem = document.createElement('div');
+                            answerItem.className = 'answer-item';
+                            answerItem.textContent = answerData.cuerpo;
+                            answersContainer.appendChild(answerItem);
+                        });
+                    });
+                    
+                    questionsContainer.appendChild(questionItem);
                 });
-                
-                questionsContainer.appendChild(questionItem);
-            });
-        }
-    });
+            }
+        });
+    }
 </script>
 </body>
 </html>
